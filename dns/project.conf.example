@@ -1,0 +1,15 @@
+# /opt/homebrew/etc/dnsmasq.d/project.conf
+# Private DNS Zone Configuration for .test Namespace
+# Authoritative mappings for Mac 2 Edge Reverse Proxy (10.7.5.53)
+
+# Private domain mappings
+address=/app.cn-capstone.test/10.7.5.53
+address=/api.cn-capstone.test/10.7.5.53
+
+# Set default Time-To-Live (TTL) in seconds for project records
+# Short TTL (30s) facilitates Phase 2 controlled cutover demonstrations
+local-ttl=30
+
+# Restrict .test queries strictly to this authoritative configuration
+local=/test/
+domain=test

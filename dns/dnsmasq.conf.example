@@ -1,0 +1,32 @@
+# /opt/homebrew/etc/dnsmasq.conf
+# Computer Networks Capstone - Private DNS Configuration
+# Host: Mac 1 (Aditya Rana)
+
+# Never forward plain names (without a dot or domain part)
+domain-needed
+
+# Never forward addresses in non-routed address spaces
+bogus-priv
+
+# Listen only on specified interfaces to prevent conflicts with macOS mDNSResponder
+bind-interfaces
+listen-address=127.0.0.1
+# Replace with Mac 1 LAN IPv4 address (e.g., 10.7.1.10)
+# listen-address=10.7.x.x
+
+# Port 53 is standard for DNS (UDP and TCP)
+port=53
+
+# Upstream public DNS fallback for non-project queries
+server=1.1.1.1
+server=8.8.8.8
+
+# Do not poll /etc/resolv.conf for changes
+no-poll
+
+# Log queries for debugging and Wireshark verification
+log-queries
+log-facility=/opt/homebrew/var/log/dnsmasq.log
+
+# Include project-specific zone configurations
+conf-dir=/opt/homebrew/etc/dnsmasq.d/,*.conf
