@@ -1,6 +1,3 @@
-Yep — here is the **entire `README.md` in one single copy-paste block**. Just copy everything inside the block and paste it into GitHub's `README.md`.
-
-```markdown
 # CN Private Network Platform — Mac 1 DNS Server
 
 ## 📌 Overview
