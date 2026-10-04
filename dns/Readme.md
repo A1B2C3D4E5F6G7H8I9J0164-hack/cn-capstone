@@ -1,5 +1,21 @@
 # CN Private Network Platform — Mac 1 DNS Server
 
+## Team Member
+
+Aditya Rana
+
+## Role
+
+DNS Server
+
+## Network Configuration
+
+- IP Address: 10.7.9.245
+- Interface: en0
+- Gateway: 10.7.0.1
+- DNS Service: dnsmasq
+- DNS Domain: cn-capstone.test
+  
 ## 📌 Overview
 
 Mac 1 acts as the **Private DNS Server and Test Client** for the CN Private Network Platform.
