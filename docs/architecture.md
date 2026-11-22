@@ -1,126 +1,43 @@
-# System Architecture Specification
+# Netforcers — System Architecture
 
-## Computer Networks Capstone: Private Network Service Platform
+This page is updated for **Phase 2 (22 November 2026)**. DHCP addresses can change and must be checked on assessment day.
 
-### Core Philosophy
-"The application stays simple; the network is the project."
+The authoritative Phase 2 topology and request-flow diagrams are in [phase2/docs/architecture.md](../phase2/docs/architecture.md). Full implementation results are in [phase2/docs/phase2-final-report.md](../phase2/docs/phase2-final-report.md).
 
----
+## Four-Mac architecture
 
-## 1. Architectural Overview
+| Mac | Owner | Verified IP (22 Nov) | Services |
+|---|---|---|---|
+| Mac 1 | Aditya Rana | `10.7.17.8` | Primary dnsmasq TCP/UDP 53 |
+| Mac 2 | Krishna | `10.7.12.238` | Primary nginx HTTPS TCP 8443 |
+| Mac 3 | Rachit Gupta | `10.7.21.149` | Backend A TCP 3001; standby nginx HTTPS TCP 8443 |
+| Mac 4 | Saumya Mishra | `10.7.21.214` | Backend B TCP 3002; backup dnsmasq TCP/UDP 53 |
 
-The Private Network Service Platform is a distributed, multi-tier system engineered across four physical macOS nodes connected via a private local area network (LAN). It replicates modern enterprise cloud application delivery pipelines entirely within an on-premises, isolated environment without dependencies on external public infrastructure.
+Network: `10.7.0.0/19`, gateway `10.7.0.1`, Wi-Fi `en0`; project name `app.cn-capstone.test`.
 
-The architecture decouples client service discovery, edge security termination, load distribution, and application workload execution across specialized network nodes.
-
----
-
-## 2. Component Inventory and Mapping
-
-| Physical Node | Team Lead | Infrastructure Component | Primary Software | Network Socket | Cloud Architectural Analogy |
-|:---|:---|:---|:---|:---|:---|
-| **Mac 1** | Aditya Rana | Authoritative DNS Resolver | `dnsmasq` | `10.7.9.245:53` (UDP/TCP) | Amazon Route 53 / CoreDNS |
-| **Mac 2** | Krishna | Edge Reverse Proxy & Load Balancer | `nginx` 1.31.6 + OpenSSL | `10.7.5.53:8443` (TCP/TLS) | AWS Application Load Balancer / CloudFront |
-| **Mac 3** | Rachit Gupta | Application Server Instance A | Python 3 HTTP Server | `10.7.22.10:3001` (TCP) | AWS EC2 / ECS Container A |
-| **Mac 4** | Saumya Mishra | Application Server Instance B | Python 3 HTTP Server | `10.7.7.25:3002` (TCP) | AWS EC2 / ECS Container B |
-
----
-
-## 3. Request Processing Pipeline
-
-The traversal of an application request from issuance to completion spans seven distinct phases:
-
-```
-[ Client ]
-    |
-    | 1. DNS Query (UDP 53) -> "app.cn-capstone.test"
-    v
-[ Mac 1: dnsmasq ]
-    |
-    | 2. DNS Answer (A Record) -> 10.7.5.53
-    v
-[ Client ]
-    |
-    | 3. TCP 3-Way Handshake (SYN -> SYN-ACK -> ACK on TCP 8443)
-    | 4. TLS 1.2/1.3 Cryptographic Handshake (ClientHello -> ServerHello -> Cert -> Finished)
-    | 5. Encrypted HTTP/1.1 Request (GET /api/status)
-    v
-[ Mac 2: Nginx Edge ]
-    |
-    | TLS Termination & Inspection
-    | Selection of Upstream Node via Round-Robin Algorithm (cn_backends)
-    | Injection of Proxy Headers:
-    |   - Host: app.cn-capstone.test
-    |   - X-Real-IP: <client_ip>
-    |   - X-Forwarded-For: <client_ip>
-    |   - X-Forwarded-Proto: https
-    |
-    +---------------------------------+
-    |                                 |
-    | 6a. HTTP Request (Turn 1)       | 6b. HTTP Request (Turn 2)
-    v                                 v
-[ Mac 3: Backend A ]              [ Mac 4: Backend B ]
-  (10.7.22.10:3001)                 (10.7.7.25:3002)
-    |                                 |
-    | 7a. Response + Headers:         | 7b. Response + Headers:
-    |     - X-Backend: A              |     - X-Backend: B
-    |     - ETag: "A-v1"              |     - ETag: "B-v1"
-    |     - Cache-Control: max-age=60 |     - Cache-Control: max-age=60
-    +---------------------------------+
-    |
-    v
-[ Mac 2: Nginx Edge ]
-    |
-    | Encapsulate Response inside Active TLS Session
-    v
-[ Client ]
-    (Receives HTTP/1.1 200 OK or 304 Not Modified over TLS)
+```text
+             Client
+                |
+       DNS query (UDP 53)
+                |
+          +-----+-----+
+          |           |
+      Mac 1 DNS   Mac 4 backup DNS
+          |           |
+          +-----+-----+
+                |
+       A = 10.7.12.238 (TTL 30)
+                |
+      TCP/TLS to port 8443
+                |
+        Mac 2 primary nginx
+                |
+           HTTP proxy
+          /          \
+ Mac 3 Backend A   Mac 4 Backend B
+ 10.7.21.149:3001  10.7.21.214:3002
 ```
 
----
+During manual controlled edge migration, DNS answers point to Mac 3 `10.7.21.149`, where standby nginx handles HTTPS on port 8443. Firewall B has a documented Mac 3 allowance for this standby route. DNS was restored afterward to Mac 2.
 
-## 4. Protocol Layer Contracts
-
-### 4.1 Domain Name Resolution (DNS)
-- **Zone Authority**: Authoritative for `*.test` namespace.
-- **Record Mapping**:
-  - `app.cn-capstone.test` -> `10.7.5.53` (Mac 2 Edge)
-  - `api.cn-capstone.test` -> `10.7.5.53` (Mac 2 Edge)
-- **TTL Configuration**: Set to 30 seconds (`local-ttl=30`) for efficient resolver caching.
-
-### 4.2 Edge Security and TLS Termination
-- **Protocol Support**: TLS 1.2 and TLS 1.3.
-- **Port**: 8443 (configured to avoid requiring root binding on macOS).
-- **Certificate Specification**:
-  - Key Algorithm: RSA 2048-bit.
-  - Signature Algorithm: SHA-256.
-  - Common Name (CN): `app.cn-capstone.test`.
-  - Subject Alternative Name (SAN): `DNS:app.cn-capstone.test`.
-  - Root Trust: Installed in macOS `System.keychain` on all participating client machines.
-
-### 4.3 Load Balancing Strategy
-- **Algorithm**: Round-Robin distribution across upstream pool `cn_backends`.
-- **Upstream Pool Members**:
-  - `10.7.22.10:3001` (Backend A)
-  - `10.7.7.25:3002` (Backend B)
-- **Session Stickiness**: Disabled to demonstrate deterministic alternation.
-
-### 4.4 HTTP REST Endpoints
-- `GET /`:
-  - Status: `200 OK`
-  - Body: `{"backend": "<A|B>", "status": "ok", "service": "cn-project"}`
-- `GET /api/status`:
-  - Status: `200 OK`
-  - Body: `{"backend": "<A|B>", "status": "ok"}`
-- **Conditional Cache Validation**:
-  - Request with header: `If-None-Match: "<ETag>"`
-  - Server status: `304 Not Modified`
-  - Header: `Cache-Control: max-age=60`
-
----
-
-## 5. Security Architecture & Topology Hiding
-
-1. **Client Confidentiality**: Client requests are encrypted in transit over the local Wi-Fi medium using TLS.
-2. **Topology Hiding**: Upstream IP addresses (`10.7.22.10`, `10.7.7.25`) and application ports (`3001`, `3002`) are never exposed to clients.
-3. **Restricted Domain Namespace**: Use of the reserved `.test` top-level domain prevents external DNS leakage or macOS Bonjour/mDNS collisions.
+Phase 1-era address tables are superseded by this page and the Phase 2 inventory. For captured evidence see [evidence/](../evidence/) and [Phase 2 evidence](../phase2/evidence/observed-results.md).
